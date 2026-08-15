@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./Quest 4/Stage 1/starter-kit"
+    ]
+}
