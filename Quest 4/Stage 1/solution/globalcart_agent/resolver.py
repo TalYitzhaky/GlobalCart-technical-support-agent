@@ -33,6 +33,10 @@ RETURN_REASONS = {
 def resolve_ticket(ticket: str, mode: str = "auto") -> dict[str, Any]:
     """Resolve a GlobalCart support ticket with the requested agent mode."""
     selected_mode = _select_mode(mode)
+    if selected_mode == "langgraph-local":
+        from .langgraph_workflow import resolve_ticket_langgraph_local
+
+        return resolve_ticket_langgraph_local(ticket)
     if selected_mode in {"openai", "grok", "gemini"}:
         try:
             if selected_mode == "openai":
@@ -489,9 +493,9 @@ def _select_mode(mode: str) -> str:
         if os.environ.get("GEMINI_API_KEY"):
             return "gemini"
         return "local"
-    if normalized in {"openai", "grok", "gemini", "local"}:
+    if normalized in {"openai", "grok", "gemini", "local", "langgraph-local"}:
         return normalized
-    raise ValueError("mode must be one of: auto, local, openai, grok, gemini")
+    raise ValueError("mode must be one of: auto, local, langgraph-local, openai, grok, gemini")
 
 
 def _parse_json_output(text: str) -> dict[str, Any]:

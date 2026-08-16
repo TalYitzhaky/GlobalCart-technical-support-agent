@@ -16,6 +16,8 @@ The solution has two modes:
   function calling.
 - `gemini`: provider mode using Google Gemini's Interactions API and custom
   function calling.
+- `langgraph-local`: deterministic LangGraph workflow. It uses shared state and
+  explicit nodes to orchestrate the same local business logic without an LLM.
 - `local`: deterministic fallback. It performs the same order -> user -> policy
   -> refund investigation without an API key, useful for demos and regression
   tests.
@@ -70,6 +72,12 @@ Local deterministic mode:
 
 ```bash
 python run_agent.py --mode local "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
+```
+
+LangGraph deterministic workflow mode:
+
+```bash
+python run_agent.py --mode langgraph-local "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
 ```
 
 OpenAI tool-calling mode:
@@ -135,9 +143,18 @@ cd ..\starter-kit
 python examples\verify_scenarios.py
 ```
 
-Then run this solution's local regression suite:
+Then run this solution's provider-preferred scenario suite. It uses `auto`,
+which tries OpenAI, then Grok, then Gemini, and falls back to local mode if no
+provider key is configured:
 
 ```bash
 cd ..\solution
 python run_scenarios.py
+```
+
+For deterministic baseline checks that never call an LLM provider:
+
+```bash
+python run_scenarios.py --mode local
+python run_scenarios.py --mode langgraph-local
 ```

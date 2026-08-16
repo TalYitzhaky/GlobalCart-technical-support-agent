@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import sys
 from pathlib import Path
 
@@ -65,9 +66,18 @@ SCENARIOS = [
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Run GlobalCart scenario regression checks.")
+    parser.add_argument(
+        "--mode",
+        choices=["auto", "openai", "grok", "gemini", "local", "langgraph-local"],
+        default="auto",
+        help="Agent mode to test. Default uses provider-preferred auto fallback.",
+    )
+    args = parser.parse_args()
+
     failures: list[str] = []
     for scenario in SCENARIOS:
-        result = resolve_ticket(scenario["ticket"], mode="local")
+        result = resolve_ticket(scenario["ticket"], mode=args.mode)
         action = result["action_taken"]
         decision = action.get("decision")
         if decision != scenario["decision"]:
@@ -76,7 +86,17 @@ def main() -> int:
             failures.append(f"{scenario['name']}: missing policy {scenario['policy']}")
         if scenario.get("error") and action.get("error") != scenario["error"]:
             failures.append(f"{scenario['name']}: missing error {scenario['error']}")
-        print(json.dumps({"scenario": scenario["name"], "decision": decision}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "requested_mode": args.mode,
+                    "actual_mode": action.get("mode"),
+                    "scenario": scenario["name"],
+                    "decision": decision,
+                },
+                ensure_ascii=False,
+            )
+        )
 
     if failures:
         print("\nFAILURES:")
