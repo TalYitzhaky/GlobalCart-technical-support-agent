@@ -186,6 +186,7 @@ def resolve_ticket_gemini(ticket: str) -> dict[str, Any]:
         }
     ]
     tools_called: list[str] = []
+    tool_results: list[dict[str, Any]] = []
 
     for _ in range(8):
         interaction = client.interactions.create(model=model, store=False, input=history, tools=tools)
@@ -193,10 +194,7 @@ def resolve_ticket_gemini(ticket: str) -> dict[str, Any]:
         function_calls = [step for step in steps if _item_type(step) == "function_call"]
         if not function_calls:
             parsed = _parse_json_output(_interaction_text(interaction))
-            _validate_agent_output(parsed)
-            parsed["action_taken"].setdefault("mode", "gemini")
-            parsed["action_taken"].setdefault("tools_called", tools_called)
-            return parsed
+            return _normalize_provider_output(parsed, provider="gemini", tools_called=tools_called, tool_results=tool_results)
 
         history.extend(_items_as_dicts(steps))
         for call in function_calls:
@@ -206,6 +204,7 @@ def resolve_ticket_gemini(ticket: str) -> dict[str, Any]:
             if isinstance(arguments, str):
                 arguments = json.loads(arguments or "{}")
             tool_result = _execute_registered_tool(name, arguments, tools_called)
+            tool_results.append({"tool": name, "arguments": arguments, "result": tool_result})
             history.append(
                 {
                     "type": "function_result",
@@ -242,6 +241,7 @@ def _resolve_ticket_responses_api(
         },
     ]
     tools_called: list[str] = []
+    tool_results: list[dict[str, Any]] = []
     previous_response_id: str | None = None
 
     for _ in range(8):
@@ -254,10 +254,7 @@ def _resolve_ticket_responses_api(
         function_calls = [item for item in output if _item_type(item) == "function_call"]
         if not function_calls:
             parsed = _parse_json_output(_response_text(response))
-            _validate_agent_output(parsed)
-            parsed["action_taken"].setdefault("mode", provider)
-            parsed["action_taken"].setdefault("tools_called", tools_called)
-            return parsed
+            return _normalize_provider_output(parsed, provider=provider, tools_called=tools_called, tool_results=tool_results)
 
         if not use_previous_response_id:
             input_items.extend(_items_as_dicts(output))
@@ -267,6 +264,7 @@ def _resolve_ticket_responses_api(
             call_id = _item_get(call, "call_id")
             arguments = json.loads(_item_get(call, "arguments") or "{}")
             tool_result = _execute_registered_tool(name, arguments, tools_called)
+            tool_results.append({"tool": name, "arguments": arguments, "result": tool_result})
             next_input_items.append(
                 {
                     "type": "function_call_output",
@@ -422,6 +420,123 @@ def _decision_from_results(policy: dict[str, Any], refund: dict[str, Any] | None
     if policy.get("requires_escalation"):
         return DECISION_ESCALATED
     return DECISION_REJECTED
+
+
+def _normalize_provider_output(
+    parsed: dict[str, Any],
+    provider: str,
+    tools_called: list[str],
+    tool_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    _validate_agent_output(parsed)
+    result_by_tool = {entry["tool"]: entry["result"] for entry in tool_results}
+    action = dict(parsed.get("action_taken", {}))
+    action["mode"] = provider
+    action["tools_called"] = tools_called
+
+    order = result_by_tool.get("get_order_details")
+    user = result_by_tool.get("get_user_profile")
+    policy = result_by_tool.get("check_return_policy")
+    refund = result_by_tool.get("process_refund")
+
+    error_entry = next((entry for entry in tool_results if _has_error(entry["result"])), None)
+    if error_entry:
+        error = error_entry["result"]
+        action["decision"] = DECISION_NEED_MORE_INFO
+        action["error"] = error["error"]
+        _copy_order_context(action, order, policy, tool_results)
+        parsed["action_taken"] = action
+        parsed["customer_response"] = _safe_customer_response(parsed["customer_response"], None, error)
+        return parsed
+
+    if isinstance(order, dict):
+        action["order_id"] = order.get("order_id", action.get("order_id"))
+    if isinstance(policy, dict):
+        action["reason"] = policy.get("reason", action.get("reason"))
+        action["policy_verdict"] = policy.get("verdict")
+        action["applicable_policies"] = policy.get("applicable_policies", [])
+    if isinstance(refund, dict):
+        action["refund_status"] = refund.get("status")
+        action["refund_amount"] = refund.get("approved_amount", 0.0)
+        action["refund_id"] = refund.get("refund_id")
+        if refund.get("escalation_reason"):
+            action["escalation_reason"] = refund["escalation_reason"]
+    elif isinstance(policy, dict) and not policy.get("eligible", False):
+        action["refund_amount"] = 0.0
+
+    if isinstance(policy, dict):
+        action["decision"] = _decision_from_results(policy, refund if isinstance(refund, dict) else None)
+    else:
+        action["decision"] = _canonical_decision(action.get("decision"))
+
+    if _response_contradicts_refund(parsed["customer_response"], action):
+        if isinstance(order, dict) and isinstance(user, dict) and isinstance(policy, dict):
+            parsed["customer_response"] = _customer_response(
+                "",
+                order,
+                user,
+                policy,
+                refund if isinstance(refund, dict) else None,
+                action["decision"],
+            )
+        else:
+            parsed["customer_response"] = "Thanks for reaching out. I checked the available records and cannot confirm that an automatic refund was issued."
+
+    parsed["action_taken"] = action
+    return parsed
+
+
+def _canonical_decision(raw: Any) -> str:
+    normalized = str(raw or "").upper().strip()
+    aliases = {
+        "REFUND_APPROVED": DECISION_AUTO_REFUND_APPROVED,
+        "APPROVED": DECISION_AUTO_REFUND_APPROVED,
+        "AUTO_APPROVED": DECISION_AUTO_REFUND_APPROVED,
+        "AUTO_REFUND_APPROVED": DECISION_AUTO_REFUND_APPROVED,
+        "ESCALATE_TO_HUMAN": DECISION_ESCALATED,
+        "ESCALATION_REQUIRED": DECISION_ESCALATED,
+        "ESCALATED": DECISION_ESCALATED,
+        "ESCALATED_TO_HUMAN": DECISION_ESCALATED,
+        "DENIED": DECISION_REJECTED,
+        "REFUND_DENIED": DECISION_REJECTED,
+        "DECLINED": DECISION_REJECTED,
+        "REJECTED": DECISION_REJECTED,
+        "NEED_MORE_INFO": DECISION_NEED_MORE_INFO,
+    }
+    return aliases.get(normalized, normalized or DECISION_NEED_MORE_INFO)
+
+
+def _copy_order_context(
+    action: dict[str, Any],
+    order: dict[str, Any] | None,
+    policy: dict[str, Any] | None,
+    tool_results: list[dict[str, Any]],
+) -> None:
+    if isinstance(order, dict) and not _has_error(order):
+        action["order_id"] = order.get("order_id", action.get("order_id"))
+    else:
+        for entry in tool_results:
+            if entry["tool"] == "get_order_details":
+                action["order_id"] = entry["arguments"].get("order_id", action.get("order_id"))
+    if isinstance(policy, dict) and not _has_error(policy):
+        action["reason"] = policy.get("reason", action.get("reason"))
+        action["policy_verdict"] = policy.get("verdict")
+        action["applicable_policies"] = policy.get("applicable_policies", [])
+
+
+def _safe_customer_response(response: str, decision: str | None, error: dict[str, Any] | None) -> str:
+    if error:
+        return (
+            "Thanks for reaching out. I could not verify that order with the details provided. "
+            "Please confirm the order number so I can investigate this properly."
+        )
+    return response
+
+
+def _response_contradicts_refund(response: str, action: dict[str, Any]) -> bool:
+    text = response.lower()
+    claims_refund = any(phrase in text for phrase in ["refund has been issued", "refund was issued", "approved a refund", "refund is approved"])
+    return claims_refund and action.get("refund_status") != "APPROVED"
 
 
 def _customer_response(

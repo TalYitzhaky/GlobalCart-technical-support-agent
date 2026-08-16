@@ -81,11 +81,20 @@ def main() -> int:
         action = result["action_taken"]
         decision = action.get("decision")
         if decision != scenario["decision"]:
-            failures.append(f"{scenario['name']}: expected {scenario['decision']}, got {decision}")
+            failures.append(
+                f"{scenario['name']}: expected {scenario['decision']}, got {decision}; "
+                f"action_taken={json.dumps(action, ensure_ascii=False)}"
+            )
         if scenario.get("policy") and scenario["policy"] not in action.get("applicable_policies", []):
-            failures.append(f"{scenario['name']}: missing policy {scenario['policy']}")
+            failures.append(
+                f"{scenario['name']}: missing policy {scenario['policy']}; "
+                f"action_taken={json.dumps(action, ensure_ascii=False)}"
+            )
         if scenario.get("error") and action.get("error") != scenario["error"]:
-            failures.append(f"{scenario['name']}: missing error {scenario['error']}")
+            failures.append(
+                f"{scenario['name']}: missing error {scenario['error']}; "
+                f"action_taken={json.dumps(action, ensure_ascii=False)}"
+            )
         print(
             json.dumps(
                 {
