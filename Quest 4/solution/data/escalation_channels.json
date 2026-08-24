@@ -1,0 +1,20 @@
+{
+  "default_channel": "ops-refund-escalations",
+  "channels": [
+    {
+      "channel": "ops-refund-escalations",
+      "destination": "mock-slack://ops-refund-escalations",
+      "owner": "Operations Lead"
+    },
+    {
+      "channel": "fraud-review",
+      "destination": "mock-slack://fraud-review",
+      "owner": "Fraud Review"
+    },
+    {
+      "channel": "billing-support",
+      "destination": "mock-slack://billing-support",
+      "owner": "Billing Support"
+    }
+  ]
+}

@@ -69,9 +69,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run GlobalCart scenario regression checks.")
     parser.add_argument(
         "--mode",
-        choices=["auto", "openai", "grok", "gemini", "local", "langgraph-local"],
+        choices=["auto", "openai", "grok", "gemini", "local", "langgraph-local", "multi-agent"],
         default="auto",
-        help="Agent mode to test. Default uses provider-preferred auto fallback.",
+        help="Agent mode to test. Default auto uses the official multi-agent path.",
     )
     args = parser.parse_args()
 

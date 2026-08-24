@@ -6,6 +6,7 @@ A two-part challenge on building AI agents, from a single autonomous agent
 | Folder | Content |
 |---|---|
 | `Stage 1/` | Part A — Single-Agent Resolver: task brief, starter kit, background guide |
+| `Stage 2/` | Part B — Distributed Agent Crew: task brief, starter kit, background guide |
 
 ## © Copyright & Intellectual Property
 

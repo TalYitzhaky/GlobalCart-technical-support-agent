@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[2]
-STARTER_KIT = ROOT / "starter-kit"
+QUEST_ROOT = Path(__file__).resolve().parents[2]
+STARTER_KIT = QUEST_ROOT / "Stage 1" / "starter-kit"
 if str(STARTER_KIT) not in sys.path:
     sys.path.insert(0, str(STARTER_KIT))
 
@@ -37,6 +37,10 @@ def resolve_ticket(ticket: str, mode: str = "auto") -> dict[str, Any]:
         from .langgraph_workflow import resolve_ticket_langgraph_local
 
         return resolve_ticket_langgraph_local(ticket)
+    if selected_mode == "multi-agent":
+        from .multi_agent_workflow import resolve_ticket_multi_agent
+
+        return resolve_ticket_multi_agent(ticket)
     if selected_mode in {"openai", "grok", "gemini"}:
         try:
             if selected_mode == "openai":
@@ -601,16 +605,10 @@ def _schema_to_gemini_tool(schema: dict[str, Any]) -> dict[str, Any]:
 def _select_mode(mode: str) -> str:
     normalized = mode.lower()
     if normalized == "auto":
-        if os.environ.get("OPENAI_API_KEY"):
-            return "openai"
-        if os.environ.get("XAI_API_KEY"):
-            return "grok"
-        if os.environ.get("GEMINI_API_KEY"):
-            return "gemini"
-        return "local"
-    if normalized in {"openai", "grok", "gemini", "local", "langgraph-local"}:
+        return "multi-agent"
+    if normalized in {"openai", "grok", "gemini", "local", "langgraph-local", "multi-agent"}:
         return normalized
-    raise ValueError("mode must be one of: auto, local, langgraph-local, openai, grok, gemini")
+    raise ValueError("mode must be one of: auto, local, langgraph-local, multi-agent, openai, grok, gemini")
 
 
 def _parse_json_output(text: str) -> dict[str, Any]:

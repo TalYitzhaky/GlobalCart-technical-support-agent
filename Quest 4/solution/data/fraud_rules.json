@@ -1,0 +1,41 @@
+{
+  "reference_date": "2026-08-05",
+  "repeat_claim_window_days": 60,
+  "rules": [
+    {
+      "rule_id": "FRD-001",
+      "title": "High fraud score",
+      "condition": "initial_fraud_score >= 60",
+      "risk_level": "high",
+      "requires_escalation": true
+    },
+    {
+      "rule_id": "FRD-002",
+      "title": "Prior fraud flag",
+      "condition": "prior_fraud_flags > 0",
+      "risk_level": "high",
+      "requires_escalation": true
+    },
+    {
+      "rule_id": "FRD-003",
+      "title": "Repeat refund claims",
+      "condition": "refund_claims_in_last_60_days >= 3",
+      "risk_level": "high",
+      "requires_escalation": true
+    },
+    {
+      "rule_id": "FRD-004",
+      "title": "Recent address change on refund case",
+      "condition": "address_changed_at is present",
+      "risk_level": "medium",
+      "requires_escalation": false
+    },
+    {
+      "rule_id": "FRD-005",
+      "title": "High value first order",
+      "condition": "orders_count <= 1 and total_amount >= 500",
+      "risk_level": "medium",
+      "requires_escalation": false
+    }
+  ]
+}

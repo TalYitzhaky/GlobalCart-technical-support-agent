@@ -15,7 +15,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the GlobalCart Operations Resolver Agent.")
     parser.add_argument("ticket", nargs="?", help="Customer ticket text.")
     parser.add_argument("--ticket-file", help="Path to a text file containing the customer ticket.")
-    parser.add_argument("--mode", choices=["auto", "local", "langgraph-local", "openai", "grok", "gemini"], default="auto")
+    parser.add_argument(
+        "--mode",
+        choices=["auto", "local", "langgraph-local", "multi-agent", "openai", "grok", "gemini"],
+        default="multi-agent",
+    )
     args = parser.parse_args()
 
     if args.ticket_file:
