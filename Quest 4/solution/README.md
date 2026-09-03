@@ -72,10 +72,49 @@ Requirements:
 
 From this folder:
 
-```bash
+Windows:
+
+```powershell
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+```
+
+macOS / Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+For OpenAI mode, copy `.env.example` to `.env` or export the variables in your
+shell:
+
+Windows:
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key_here"
+$env:OPENAI_MODEL="gpt-5"
+$env:XAI_API_KEY="your_xai_api_key_here"
+$env:GROK_MODEL="grok-4.6"
+$env:GEMINI_API_KEY="your_gemini_api_key_here"
+$env:GEMINI_MODEL="gemini-3.6-flash"
+$env:MULTI_AGENT_LLM_PROVIDER="auto"
+$env:MULTI_AGENT_MODEL=""
+```
+
+macOS / Linux:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export OPENAI_MODEL="gpt-5"
+export XAI_API_KEY="your_xai_api_key_here"
+export GROK_MODEL="grok-4.6"
+export GEMINI_API_KEY="your_gemini_api_key_here"
+export GEMINI_MODEL="gemini-3.6-flash"
+export MULTI_AGENT_LLM_PROVIDER="auto"
+export MULTI_AGENT_MODEL=""
 ```
 
 For OpenAI mode, copy `.env.example` to `.env` or export the variables in your
@@ -115,44 +154,100 @@ https://ai.google.dev/gemini-api/docs/function-calling
 
 Local deterministic mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py --mode local "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py --mode local "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
 ```
 
 LangGraph deterministic workflow mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py --mode langgraph-local "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py --mode langgraph-local "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
 ```
 
 Part 2 multi-agent mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py --mode multi-agent "This is Ronen, order ORD-1005. The tablet screen was smashed on arrival. Refund me, this keeps happening."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py --mode multi-agent "This is Ronen, order ORD-1005. The tablet screen was smashed on arrival. Refund me, this keeps happening."
 ```
 
 OpenAI tool-calling mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py --mode openai "Order ORD-1002. The espresso machine is dented and leaking. I paid 150 dollars for this."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py --mode openai "Order ORD-1002. The espresso machine is dented and leaking. I paid 150 dollars for this."
 ```
 
 Grok tool-calling mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py --mode grok "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py --mode grok "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
 ```
 
 Gemini tool-calling mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py --mode gemini "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py --mode gemini "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box."
 ```
 
 Default multi-agent mode:
 
-```bash
+Windows:
+
+```powershell
 python run_agent.py "My order ORD-2222 never arrived and I want the $300 back."
+```
+
+macOS / Linux:
+
+```bash
+python3 run_agent.py "My order ORD-2222 never arrived and I want the $300 back."
 ```
 
 The output is parseable JSON with exactly three top-level fields:
