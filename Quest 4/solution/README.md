@@ -8,7 +8,10 @@ starter-kit data and services are not modified.
 
 ## Architecture
 
-The solution has two modes:
+The solution exposes multiple execution modes so the user can choose the model
+provider or runtime style that fits their environment. The idea is to give
+variety without changing the business logic: the same ticket-resolution flow can
+run locally, through a LangGraph workflow, or through an external LLM provider.
 
 - `openai`: main agent mode. It exposes the four starter-kit functions as
   OpenAI function tools and executes the model-requested calls.
@@ -31,6 +34,22 @@ The solution has two modes:
   tests.
 - `auto`: aliases the official `multi-agent` path.
 
+Why so many modes? Because the project is designed to be flexible for different
+users and different AI provider preferences. A user may prefer Gemini, OpenAI,
+or Grok. The system keeps the same contract and tool boundaries, while letting
+that user run the same refund workflow against their preferred model. The
+`local` and `langgraph-local` modes provide the same behavior without requiring a
+paid API key, which is useful for local debugging, offline testing, and
+repeatable regression checks.
+
+Why use LangGraph? LangGraph gives us a reliable orchestration layer for
+multi-step reasoning. The refund workflow has a clear sequence: gather facts,
+check policy, decide, and respond. LangGraph expresses that as explicit nodes,
+state transitions, and conditional routing instead of a single opaque prompt.
+This makes the execution easier to debug, easier to validate against scenarios,
+and easier to enforce guardrails. It also keeps each stage testable and makes it
+simple to swap the LLM provider without rewriting the control flow.
+
 Part 1 modes call only the starter-kit tools:
 
 - `get_order_details`
@@ -44,6 +63,12 @@ Part 2 `multi-agent` adds deterministic mock tools for:
 - `send_slack_alert`
 
 ## Setup
+
+Requirements:
+
+- Python 3.10 or newer is recommended for the LangGraph local workflow.
+- Older Python versions may fail with syntax or type-annotation features used in
+  the workflow code.
 
 From this folder:
 
