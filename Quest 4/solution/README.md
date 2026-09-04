@@ -102,6 +102,7 @@ $env:GEMINI_API_KEY="your_gemini_api_key_here"
 $env:GEMINI_MODEL="gemini-3.6-flash"
 $env:MULTI_AGENT_LLM_PROVIDER="auto"
 $env:MULTI_AGENT_MODEL=""
+$env:MULTI_AGENT_TIMEOUT_SECONDS="20"
 ```
 
 macOS / Linux:
@@ -115,6 +116,7 @@ export GEMINI_API_KEY="your_gemini_api_key_here"
 export GEMINI_MODEL="gemini-3.6-flash"
 export MULTI_AGENT_LLM_PROVIDER="auto"
 export MULTI_AGENT_MODEL=""
+export MULTI_AGENT_TIMEOUT_SECONDS="20"
 ```
 
 For OpenAI mode, copy `.env.example` to `.env` or export the variables in your
@@ -129,6 +131,7 @@ set GEMINI_API_KEY=your_gemini_api_key_here
 set GEMINI_MODEL=gemini-3.6-flash
 set MULTI_AGENT_LLM_PROVIDER=auto
 set MULTI_AGENT_MODEL=
+set MULTI_AGENT_TIMEOUT_SECONDS=20
 ```
 
 For the Part 2 `multi-agent` path, provider selection is independent from the
@@ -136,7 +139,8 @@ CLI mode and lives in `multi_agent_provider.py`. Set
 `MULTI_AGENT_LLM_PROVIDER=openai`, `grok`, `gemini`, or leave it as `auto`.
 Auto prefers OpenAI, then Grok, then Gemini, and falls back to deterministic
 agent behavior when no usable provider is configured. Part 2 agents should not
-call the Part 1 provider resolvers directly.
+call the Part 1 provider resolvers directly. `MULTI_AGENT_TIMEOUT_SECONDS`
+limits each Part 2 provider call and defaults to 20 seconds.
 
 The OpenAI SDK reads `OPENAI_API_KEY` from the environment, as described in the
 official OpenAI quickstart:
@@ -262,6 +266,8 @@ chain-of-thought.
 In `multi-agent` mode, `action_taken` also reports multi-agent execution
 metadata:
 
+- `sentiment`: `neutral`, `concerned`, or `urgent`; Agent 3 uses this to tune
+  customer-facing wording.
 - `agent3_response_mode`: `llm` or `deterministic`
 - `agent3_llm_provider`: `openai`, `grok`, `gemini`, or `null`
 - `agent3_llm_error`: present only when an attempted provider call fails
@@ -272,7 +278,8 @@ metadata:
 Agent 1 may call only order, customer, and fraud-audit tools. Agent 2 may call
 only policy and refund tools. Agent 3 may call only the mock escalation tool.
 The LLMs can summarize, propose, and write, but verified tools remain the source
-of truth for all business facts.
+of truth for all business facts. Sentiment changes tone only; it never changes
+eligibility, policy, refund, fraud, or escalation outcomes.
 
 ## Guardrails And Edge Cases
 

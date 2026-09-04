@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import os
+import queue
 from typing import Any
 
 from .resolver import _interaction_text, _parse_json_output, _response_text
@@ -36,7 +38,7 @@ def call_multi_agent_llm(
             "parsed": None,
         }
     try:
-        text = _call_provider(provider, system_prompt, payload, output_schema, text_only)
+        text = _call_provider_with_timeout(provider, system_prompt, payload, output_schema, text_only)
         parsed = None if text_only else _parse_json_output(text)
         return {
             "mode": "llm",
@@ -46,7 +48,7 @@ def call_multi_agent_llm(
             "text": text.strip(),
             "parsed": parsed,
         }
-    except Exception as exc:
+    except BaseException as exc:
         return {
             "mode": "deterministic_fallback",
             "provider": provider,
@@ -98,6 +100,62 @@ def _model_for_provider(provider: str) -> str:
     if provider == PROVIDER_GROK:
         return os.environ.get("GROK_MODEL", "grok-4.6")
     return os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+
+
+def _timeout_seconds() -> float:
+    raw = os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "20").strip()
+    try:
+        timeout = float(raw)
+    except ValueError:
+        return 20.0
+    return timeout if timeout > 0 else 20.0
+
+
+def _call_provider_with_timeout(
+    provider: str,
+    system_prompt: str,
+    payload: dict[str, Any],
+    output_schema: dict[str, Any],
+    text_only: bool,
+) -> str:
+    timeout = _timeout_seconds()
+    result_queue: mp.Queue = mp.Queue(maxsize=1)
+    process = mp.Process(
+        target=_provider_worker,
+        args=(result_queue, provider, system_prompt, payload, output_schema, text_only),
+        daemon=True,
+    )
+    process.start()
+    process.join(timeout)
+    if process.is_alive():
+        process.terminate()
+        process.join(2)
+        if process.is_alive():
+            process.kill()
+            process.join(2)
+        raise TimeoutError(f"Multi-agent {provider} provider call timed out after {timeout:g} seconds.")
+    try:
+        message = result_queue.get_nowait()
+    except queue.Empty as exc:
+        raise RuntimeError(f"Multi-agent {provider} provider call ended without a result.") from exc
+    if message["ok"]:
+        return message["text"]
+    raise RuntimeError(message["error"])
+
+
+def _provider_worker(
+    result_queue: mp.Queue,
+    provider: str,
+    system_prompt: str,
+    payload: dict[str, Any],
+    output_schema: dict[str, Any],
+    text_only: bool,
+) -> None:
+    try:
+        text = _call_provider(provider, system_prompt, payload, output_schema, text_only)
+        result_queue.put({"ok": True, "text": text})
+    except BaseException as exc:
+        result_queue.put({"ok": False, "error": str(exc)})
 
 
 def _call_provider(

@@ -25,6 +25,8 @@ SCENARIOS = [
         "policies": ["POL-RET-02", "POL-REF-02"],
         "refund_status": "APPROVED",
         "escalation": False,
+        "sentiment": "neutral",
+        "tone_absent": ["urgent"],
     },
     {
         "name": "high-risk repeat-claim customer",
@@ -36,6 +38,8 @@ SCENARIOS = [
         "policies": ["POL-RET-01", "POL-REF-01", "POL-ESC-01", "POL-ESC-02"],
         "refund_status": "NOT_ATTEMPTED",
         "escalation": True,
+        "sentiment": "urgent",
+        "tone_any": ["urgent", "direct"],
     },
     {
         "name": "refund above automatic authority",
@@ -47,6 +51,8 @@ SCENARIOS = [
         "policies": ["POL-RET-01", "POL-REF-01"],
         "refund_status": "NOT_ATTEMPTED",
         "escalation": True,
+        "sentiment": "neutral",
+        "tone_absent": ["urgent"],
     },
     {
         "name": "return-window rejection",
@@ -58,6 +64,8 @@ SCENARIOS = [
         "policies": ["POL-RET-01"],
         "refund_status": "NOT_ATTEMPTED",
         "escalation": False,
+        "sentiment": "neutral",
+        "tone_absent": ["urgent"],
     },
     {
         "name": "non-returnable category",
@@ -69,6 +77,8 @@ SCENARIOS = [
         "policies": ["POL-REF-03"],
         "refund_status": "NOT_ATTEMPTED",
         "escalation": False,
+        "sentiment": "concerned",
+        "tone_any": ["sorry", "calm", "thanks"],
     },
     {
         "name": "missing order id",
@@ -78,6 +88,7 @@ SCENARIOS = [
         "must_not_call": ["get_order_details", "get_user_profile", "audit_fraud_risk", "check_return_policy", "process_refund", "send_slack_alert"],
         "error": "ORDER_ID_MISSING",
         "escalation": False,
+        "sentiment": "neutral",
     },
     {
         "name": "nonexistent order hallucination trap",
@@ -87,6 +98,7 @@ SCENARIOS = [
         "must_not_call": ["get_user_profile", "audit_fraud_risk", "check_return_policy", "process_refund", "send_slack_alert"],
         "error": "ORDER_NOT_FOUND",
         "escalation": False,
+        "sentiment": "neutral",
     },
     {
         "name": "order not shipped policy error path",
@@ -97,6 +109,8 @@ SCENARIOS = [
         "policies": ["POL-REF-04"],
         "refund_status": "NOT_ATTEMPTED",
         "escalation": False,
+        "sentiment": "neutral",
+        "tone_absent": ["urgent"],
     },
     {
         "name": "escalation alert verification",
@@ -108,6 +122,8 @@ SCENARIOS = [
         "policies": ["POL-RET-01", "POL-REF-01"],
         "refund_status": "NOT_ATTEMPTED",
         "escalation": True,
+        "sentiment": "concerned",
+        "tone_any": ["sorry", "calm", "thanks"],
     },
 ]
 
@@ -152,6 +168,14 @@ def main() -> int:
                 failures.append(_failure(scenario, "missing escalation alert id", action))
             if scenario.get("error") and action.get("error") != scenario["error"]:
                 failures.append(_failure(scenario, f"error expected {scenario['error']}", action))
+            if scenario.get("sentiment") and action.get("sentiment") != scenario["sentiment"]:
+                failures.append(_failure(scenario, f"sentiment expected {scenario['sentiment']}", action))
+            if action.get("agent3_response_mode") == "deterministic":
+                response_text = result.get("customer_response", "").lower()
+                if scenario.get("tone_any") and not any(phrase in response_text for phrase in scenario["tone_any"]):
+                    failures.append(_failure(scenario, f"missing sentiment tone marker {scenario['tone_any']}", action))
+                if scenario.get("tone_absent") and any(phrase in response_text for phrase in scenario["tone_absent"]):
+                    failures.append(_failure(scenario, f"unexpected sentiment tone marker {scenario['tone_absent']}", action))
             execution = action.get("agent_execution", {})
             expected_agents = ["researcher", "decision_maker", "communications"]
             for agent in expected_agents:
@@ -164,6 +188,7 @@ def main() -> int:
                     {
                         "scenario": scenario["name"],
                         "decision": action.get("decision"),
+                        "sentiment": action.get("sentiment"),
                         "agent_execution": execution,
                     },
                     ensure_ascii=False,

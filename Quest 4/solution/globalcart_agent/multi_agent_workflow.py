@@ -93,6 +93,7 @@ AGENT3_PROMPT = """You are GlobalCart's Communications & Escalation Manager.
 
 You receive a verified operational decision. You may not change or reinterpret
 that decision. Explain the result clearly and professionally to the customer.
+Adapt the tone to the provided sentiment and sentiment_style_instruction.
 Never claim a refund was issued unless the verified refund status is APPROVED.
 Never invent policy, fraud, refund, order, customer, or escalation facts.
 """
@@ -580,6 +581,7 @@ def _action_taken(
         "decision": decision_packet["decision"],
         "order_id": state.get("order_id"),
         "reason": state.get("reason"),
+        "sentiment": state.get("sentiment"),
         "fraud_risk_level": fraud_report.get("risk_level"),
         "fraud_rule_ids": fraud_report.get("matched_rule_ids", []),
         "escalation_triggered": bool(escalation_packet),
@@ -604,35 +606,58 @@ def _action_taken(
 
 # Customer-facing text can be LLM-assisted, but deterministic text remains the fallback.
 def _customer_response_for_decision(state: MultiAgentState, decision_packet: dict[str, Any]) -> str:
+    style = _sentiment_style(state.get("sentiment"))
     if state.get("error"):
         return (
-            "Thanks for reaching out. I could not verify the order information needed to resolve this. "
-            "Please confirm the order number so our team can investigate."
+            f"{style['opening']} I could not verify the order information needed to resolve this. "
+            f"{style['next_step']} Please confirm the order number so our team can investigate."
         )
     user = state["user"]
     order = state["order"]
     first_name = user.get("name", "there").split()[0]
+    greeting = f"Hi {first_name}, {style['opening'].lower()}"
     decision = decision_packet["decision"]
     refund = state.get("refund")
     if decision == DECISION_AUTO_REFUND_APPROVED and refund and refund.get("status") == "APPROVED":
         return (
-            f"Hi {first_name}, our operations team reviewed order {order['order_id']} and approved a refund of "
-            f"{refund['approved_amount']:.2f} {order['currency']}. Your refund id is {refund.get('refund_id')}."
+            f"{greeting} our operations team reviewed order {order['order_id']} and approved a refund of "
+            f"{refund['approved_amount']:.2f} {order['currency']}. {style['next_step']} "
+            f"Your refund id is {refund.get('refund_id')}."
         )
     if decision == DECISION_ESCALATED:
         return (
-            f"Hi {first_name}, our operations team reviewed order {order['order_id']} and escalated it for human review. "
-            f"Reason: {decision_packet['reason']} No automatic refund has been issued."
+            f"{greeting} our operations team reviewed order {order['order_id']} and escalated it for human review. "
+            f"Reason: {decision_packet['reason']} {style['next_step']} No automatic refund has been issued."
         )
     if decision == DECISION_REJECTED:
         return (
-            f"Hi {first_name}, our operations team reviewed order {order['order_id']} and cannot approve this refund. "
+            f"{greeting} our operations team reviewed order {order['order_id']} and cannot approve this refund. "
             f"Reason: {decision_packet['reason']}"
         )
     return (
-        f"Hi {first_name}, we need one more piece of information before we can resolve order {order['order_id']}. "
+        f"{greeting} we need one more piece of information before we can resolve order {order['order_id']}. "
         f"Reason: {decision_packet['reason']}"
     )
+
+
+def _sentiment_style(sentiment: str | None) -> dict[str, str]:
+    if sentiment == "urgent":
+        return {
+            "opening": "I understand this is urgent, and I am sorry for the trouble.",
+            "next_step": "I am keeping this direct so you know exactly what happens next.",
+            "instruction": "Use a direct, apologetic, reassuring tone that acknowledges urgency without overpromising.",
+        }
+    if sentiment == "concerned":
+        return {
+            "opening": "Thanks for explaining what happened; I am sorry this has been frustrating.",
+            "next_step": "I will keep the next step clear and calm.",
+            "instruction": "Use a warm, empathetic, calm tone.",
+        }
+    return {
+        "opening": "Thanks for reaching out.",
+        "next_step": "Here is the outcome.",
+        "instruction": "Use a concise, professional tone and do not overstate urgency.",
+    }
 
 
 def _customer_response_packet(
@@ -680,6 +705,8 @@ def _llm_payload(
 ) -> dict[str, Any]:
     return {
         "ticket": state["ticket"],
+        "sentiment": state.get("sentiment"),
+        "sentiment_style_instruction": _sentiment_style(state.get("sentiment"))["instruction"],
         "order": _compact(state.get("order")),
         "user": _compact(state.get("user")),
         "fraud_report": _compact(state.get("fraud_report")),
