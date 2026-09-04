@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from globalcart_agent import resolve_ticket
+from scenario_reasoning_checks import validate_reasoning_chain
 
 
 SCENARIOS = [
@@ -16,51 +17,69 @@ SCENARIOS = [
         "name": "happy path",
         "ticket": "Hi, I'm Maya. My earbuds from order ORD-1001 arrived cracked right out of the box. I've been shopping with you for years, can you sort this out?",
         "decision": "AUTO_REFUND_APPROVED",
+        "reasoning_all": ["ORD-1001", "APPROVED"],
+        "reasoning_any": ["process_refund", "refund"],
     },
     {
         "name": "authority breach",
         "ticket": "Order ORD-1002. The espresso machine is dented and leaking. I paid 150 dollars for this. I want my money back today.",
         "decision": "ESCALATED_TO_HUMAN",
+        "reasoning_all": ["ORD-1002"],
+        "reasoning_any": ["escalat", "automatic authority", "ESCALATION_REQUIRED"],
     },
     {
         "name": "window breach",
         "ticket": "I ordered a backpack back at the end of May (ORD-1003) and I've changed my mind, I'd like to return it.",
         "decision": "REJECTED",
         "policy": "POL-RET-01",
+        "reasoning_all": ["ORD-1003", "POL-RET-01"],
+        "reasoning_any": ["outside", "past", "return window"],
     },
     {
         "name": "non-returnable category",
         "ticket": "ORD-1008, I bought a gift card by accident. Please refund it.",
         "decision": "REJECTED",
         "policy": "POL-REF-03",
+        "reasoning_all": ["ORD-1008", "POL-REF-03"],
+        "reasoning_any": ["non-returnable", "not refundable", "rejected"],
     },
     {
         "name": "standard cap approved",
         "ticket": "Order ORD-1010 arrived damaged. Please refund it.",
         "decision": "AUTO_REFUND_APPROVED",
+        "reasoning_all": ["ORD-1010", "APPROVED"],
+        "reasoning_any": ["process_refund", "refund"],
     },
     {
         "name": "standard cap escalated",
         "ticket": "Order ORD-1011 arrived damaged. Please refund it.",
         "decision": "ESCALATED_TO_HUMAN",
+        "reasoning_all": ["ORD-1011"],
+        "reasoning_any": ["escalat", "automatic authority", "ESCALATION_REQUIRED"],
     },
     {
         "name": "risky customer",
         "ticket": "This is Ronen, order ORD-1005. The tablet screen was smashed on arrival. Refund me, this keeps happening.",
         "decision": "ESCALATED_TO_HUMAN",
         "policy": "POL-ESC-01",
+        "reasoning_all": ["ORD-1005"],
+        "reasoning_any": ["POL-ESC-01", "FRD-001", "fraud", "escalat"],
     },
     {
         "name": "order not shipped",
         "ticket": "Order ORD-1007 has not shipped yet. I want a refund.",
         "decision": "REJECTED",
         "policy": "POL-REF-04",
+        "reasoning_all": ["ORD-1007", "POL-REF-04"],
+        "reasoning_any": ["not shipped", "processing", "not refundable"],
     },
     {
         "name": "hallucination trap",
         "ticket": "My order ORD-2222 never arrived and I want the $300 back.",
         "decision": "NEED_MORE_INFO",
         "error": "ORDER_NOT_FOUND",
+        "reasoning_all": ["ORD-2222", "ORDER_NOT_FOUND"],
+        "reasoning_any": ["stopped", "verify", "confirm"],
     },
 ]
 
@@ -95,6 +114,7 @@ def main() -> int:
                 f"{scenario['name']}: missing error {scenario['error']}; "
                 f"action_taken={json.dumps(action, ensure_ascii=False)}"
             )
+        failures.extend(validate_reasoning_chain(scenario, result))
         print(
             json.dumps(
                 {

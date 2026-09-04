@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from globalcart_agent import resolve_ticket
 from globalcart_agent.multi_agent_provider import MULTI_AGENT_LLM_ENTRYPOINT
 from globalcart_agent.multi_agent_workflow import _customer_response_is_safe
+from scenario_reasoning_checks import validate_reasoning_chain
 
 
 SCENARIOS = [
@@ -27,6 +28,7 @@ SCENARIOS = [
         "escalation": False,
         "sentiment": "neutral",
         "tone_absent": ["urgent"],
+        "reasoning_all": ["ORD-1001", "process_refund", "APPROVED", "POL-RET-02", "POL-REF-02"],
     },
     {
         "name": "high-risk repeat-claim customer",
@@ -40,6 +42,8 @@ SCENARIOS = [
         "escalation": True,
         "sentiment": "urgent",
         "tone_any": ["urgent", "direct"],
+        "reasoning_all": ["ORD-1005", "FRD-001", "FRD-002", "FRD-003", "FRD-004", "POL-ESC-01", "escalat"],
+        "reasoning_absent": ["process_refund returned APPROVED"],
     },
     {
         "name": "refund above automatic authority",
@@ -53,6 +57,9 @@ SCENARIOS = [
         "escalation": True,
         "sentiment": "neutral",
         "tone_absent": ["urgent"],
+        "reasoning_all": ["ORD-1002", "POL-RET-01", "POL-REF-01"],
+        "reasoning_any": ["automatic authority", "exceeds", "escalat"],
+        "reasoning_absent": ["process_refund returned APPROVED"],
     },
     {
         "name": "return-window rejection",
@@ -66,6 +73,9 @@ SCENARIOS = [
         "escalation": False,
         "sentiment": "neutral",
         "tone_absent": ["urgent"],
+        "reasoning_all": ["ORD-1003", "POL-RET-01"],
+        "reasoning_any": ["outside", "past", "return window"],
+        "reasoning_absent": ["process_refund"],
     },
     {
         "name": "non-returnable category",
@@ -79,6 +89,9 @@ SCENARIOS = [
         "escalation": False,
         "sentiment": "concerned",
         "tone_any": ["sorry", "calm", "thanks"],
+        "reasoning_all": ["ORD-1008", "POL-REF-03"],
+        "reasoning_any": ["non-returnable", "not refundable", "rejected"],
+        "reasoning_absent": ["process_refund"],
     },
     {
         "name": "missing order id",
@@ -89,6 +102,9 @@ SCENARIOS = [
         "error": "ORDER_ID_MISSING",
         "escalation": False,
         "sentiment": "neutral",
+        "reasoning_all": ["ORDER_ID_MISSING"],
+        "reasoning_any": ["stopped", "unavailable", "order id"],
+        "reasoning_absent": ["process_refund", "check_return_policy"],
     },
     {
         "name": "nonexistent order hallucination trap",
@@ -99,6 +115,9 @@ SCENARIOS = [
         "error": "ORDER_NOT_FOUND",
         "escalation": False,
         "sentiment": "neutral",
+        "reasoning_all": ["ORD-2222", "ORDER_NOT_FOUND"],
+        "reasoning_any": ["stopped", "unavailable", "order"],
+        "reasoning_absent": ["process_refund", "check_return_policy"],
     },
     {
         "name": "order not shipped policy error path",
@@ -111,6 +130,9 @@ SCENARIOS = [
         "escalation": False,
         "sentiment": "neutral",
         "tone_absent": ["urgent"],
+        "reasoning_all": ["ORD-1007", "POL-REF-04"],
+        "reasoning_any": ["not shipped", "processing", "not refundable"],
+        "reasoning_absent": ["process_refund"],
     },
     {
         "name": "escalation alert verification",
@@ -124,6 +146,9 @@ SCENARIOS = [
         "escalation": True,
         "sentiment": "concerned",
         "tone_any": ["sorry", "calm", "thanks"],
+        "reasoning_all": ["ORD-1011", "POL-RET-01", "POL-REF-01"],
+        "reasoning_any": ["automatic authority", "exceeds", "escalat"],
+        "reasoning_absent": ["process_refund returned APPROVED"],
     },
 ]
 
@@ -176,6 +201,7 @@ def main() -> int:
                     failures.append(_failure(scenario, f"missing sentiment tone marker {scenario['tone_any']}", action))
                 if scenario.get("tone_absent") and any(phrase in response_text for phrase in scenario["tone_absent"]):
                     failures.append(_failure(scenario, f"unexpected sentiment tone marker {scenario['tone_absent']}", action))
+            failures.extend(validate_reasoning_chain(scenario, result))
             execution = action.get("agent_execution", {})
             expected_agents = ["researcher", "decision_maker", "communications"]
             for agent in expected_agents:

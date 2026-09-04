@@ -531,10 +531,11 @@ def _escalation_channel(state: MultiAgentState) -> str:
 
 # Final audit trail assembled from agent handoffs and source-of-truth tools.
 def _reasoning_chain(state: MultiAgentState, escalation_packet: dict[str, Any]) -> list[str]:
-    if state.get("error") and "order" not in state:
+    if state.get("error"):
         return [
             f"Agent 1 stopped: {state['error']['error']} - {state['error']['message']}",
             "Dependent operations were not run because prerequisite business data was unavailable.",
+            f"Agent 2 canonical decision: {state['decision_packet']['decision']} - {state['decision_packet']['reason']}",
         ]
     order = state.get("order", {})
     user = state.get("user", {})
