@@ -20,6 +20,7 @@ from .resolver import (
 )
 
 
+# Carries ticket facts, tool results, decisions, and the final output through the graph.
 class ResolverState(TypedDict, total=False):
     ticket: str
     order_id: str | None
@@ -37,6 +38,7 @@ class ResolverState(TypedDict, total=False):
     result: dict[str, Any]
 
 
+# Runs the deterministic LangGraph resolver and returns its normalized assignment output.
 def resolve_ticket_langgraph_local(ticket: str) -> dict[str, Any]:
     """Resolve a ticket through a deterministic LangGraph workflow."""
     graph = _build_graph()
@@ -44,6 +46,7 @@ def resolve_ticket_langgraph_local(ticket: str) -> dict[str, Any]:
     return final_state["result"]
 
 
+# Builds the ordered tool workflow and its conditional error and policy routes.
 def _build_graph():
     builder = StateGraph(ResolverState)
     builder.add_node("initialize_ticket", _initialize_ticket)
@@ -79,6 +82,7 @@ def _build_graph():
     return builder.compile()
 
 
+# Parses the ticket and stops early when no supported order id is present.
 def _initialize_ticket(state: ResolverState) -> ResolverState:
     ticket = state["ticket"]
     order_id = extract_order_id(ticket)
@@ -99,6 +103,7 @@ def _initialize_ticket(state: ResolverState) -> ResolverState:
     }
 
 
+# Looks up the order through the starter-kit tool and records any business error.
 def _lookup_order(state: ResolverState) -> ResolverState:
     tools_called = list(state.get("tools_called", []))
     order = _call_tool("get_order_details", tools_called, state["order_id"])
@@ -108,6 +113,7 @@ def _lookup_order(state: ResolverState) -> ResolverState:
     return update
 
 
+# Looks up the customer profile after a successful order lookup.
 def _lookup_user(state: ResolverState) -> ResolverState:
     tools_called = list(state.get("tools_called", []))
     user = _call_tool("get_user_profile", tools_called, state["order"]["user_id"])
@@ -117,6 +123,7 @@ def _lookup_user(state: ResolverState) -> ResolverState:
     return update
 
 
+# Checks return-policy eligibility before any refund operation can run.
 def _check_policy(state: ResolverState) -> ResolverState:
     tools_called = list(state.get("tools_called", []))
     policy = _call_tool("check_return_policy", tools_called, state["order_id"], state["reason"])
@@ -126,6 +133,7 @@ def _check_policy(state: ResolverState) -> ResolverState:
     return update
 
 
+# Executes the refund tool only after the graph has confirmed policy eligibility.
 def _process_refund(state: ResolverState) -> ResolverState:
     tools_called = list(state.get("tools_called", []))
     refund = _call_tool(
@@ -141,6 +149,7 @@ def _process_refund(state: ResolverState) -> ResolverState:
     return update
 
 
+# Combines verified tool results into the canonical customer response and action output.
 def _final_response(state: ResolverState) -> ResolverState:
     if state.get("error"):
         result = _error_result(state)
@@ -190,6 +199,7 @@ def _final_response(state: ResolverState) -> ResolverState:
     }
 
 
+# Converts initialization and tool errors into the shared resolver output contract.
 def _error_result(state: ResolverState) -> dict[str, Any]:
     error = state["error"]
     if error["error"] == "ORDER_ID_MISSING":
@@ -217,10 +227,12 @@ def _error_result(state: ResolverState) -> dict[str, Any]:
     )
 
 
+# Routes missing-order tickets to the final response and valid tickets to order lookup.
 def _route_after_initialize(state: ResolverState) -> Literal["lookup_order", "final_response"]:
     return "final_response" if state.get("error") else "lookup_order"
 
 
+# Routes failed lookups to the final response and successful lookups to the next dependency.
 def _route_after_tool_lookup(state: ResolverState) -> Literal["lookup_user", "check_policy", "final_response"]:
     if state.get("error"):
         return "final_response"
@@ -229,6 +241,7 @@ def _route_after_tool_lookup(state: ResolverState) -> Literal["lookup_user", "ch
     return "lookup_user"
 
 
+# Routes ineligible or failed policy checks to the final response without processing a refund.
 def _route_after_policy(state: ResolverState) -> Literal["process_refund", "final_response"]:
     if state.get("error") or not state["policy"]["eligible"]:
         return "final_response"

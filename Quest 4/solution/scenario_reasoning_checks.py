@@ -15,6 +15,7 @@ REFUND_SUCCESS_CLAIMS = [
 ]
 
 
+# Checks that an agent's audit trail is structured, concise, evidence-based, and consistent with its action.
 def validate_reasoning_chain(scenario: dict[str, Any], result: dict[str, Any]) -> list[str]:
     """Validate audit-style reasoning without requiring exact wording."""
     failures: list[str] = []
@@ -65,6 +66,7 @@ def validate_reasoning_chain(scenario: dict[str, Any], result: dict[str, Any]) -
     return failures
 
 
+# Formats a scenario failure with the observed reasoning and action data for debugging.
 def _failure(scenario: dict[str, Any], label: str, chain: Any, action: dict[str, Any]) -> str:
     return (
         f"{scenario['name']}: {label}; "

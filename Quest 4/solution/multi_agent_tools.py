@@ -10,15 +10,18 @@ from typing import Any
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
 
+# Loads one JSON document from the local multi-agent data directory.
 def _load(filename: str) -> dict[str, Any]:
     with (DATA_DIR / filename).open(encoding="utf-8") as handle:
         return json.load(handle)
 
 
+# Converts an ISO date string from the fixture data into a date for rule comparisons.
 def _parse_date(value: str | None):
     return datetime.strptime(value, "%Y-%m-%d").date() if value else None
 
 
+# Deterministically evaluates fraud rules against verified order and customer data.
 def audit_fraud_risk(order: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     """Deterministically audit refund fraud risk for a customer/order pair."""
     rules_doc = _load("fraud_rules.json")
@@ -65,6 +68,7 @@ def audit_fraud_risk(order: dict[str, Any], user: dict[str, Any]) -> dict[str, A
     }
 
 
+# Creates the structured escalation result used when a case requires human review.
 def send_slack_alert(
     order_id: str,
     decision: str,
@@ -93,10 +97,12 @@ def send_slack_alert(
     }
 
 
+# Retrieves one configured fraud rule by its stable rule identifier.
 def _rule(rules_doc: dict[str, Any], rule_id: str) -> dict[str, Any]:
     return next(rule for rule in rules_doc["rules"] if rule["rule_id"] == rule_id)
 
 
+# Generates a repeatable short identifier suffix without external state or randomness.
 def _stable_suffix(*parts: str) -> str:
     digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:8].upper()

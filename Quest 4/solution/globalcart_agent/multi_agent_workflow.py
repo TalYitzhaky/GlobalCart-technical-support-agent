@@ -28,6 +28,7 @@ from .resolver import (
 )
 
 
+# Carries verified facts, handoffs, execution metadata, and the final result between agents.
 class MultiAgentState(TypedDict, total=False):
     ticket: str
     order_id: str | None
@@ -52,6 +53,7 @@ class MultiAgentState(TypedDict, total=False):
     result: dict[str, Any]
 
 
+# Runs the fixed three-agent workflow and returns the normalized assignment output.
 def resolve_ticket_multi_agent(ticket: str) -> dict[str, Any]:
     """Resolve a ticket through the Quest #4 Part 2 multi-agent workflow."""
     graph = _build_graph()
@@ -59,6 +61,7 @@ def resolve_ticket_multi_agent(ticket: str) -> dict[str, Any]:
     return final_state["result"]
 
 
+# Builds the ordered LangGraph handoff from research to decision to communication.
 def _build_graph():
     # Part 2 graph: a fixed three-agent handoff, no dynamic supervisor yet.
     builder = StateGraph(MultiAgentState)
@@ -99,6 +102,7 @@ Never invent policy, fraud, refund, order, customer, or escalation facts.
 """
 
 
+# Asks the researcher model to summarize verified order, customer, and fraud facts.
 def _agent1_llm_report(
     ticket: str,
     reason: str,
@@ -134,6 +138,7 @@ def _agent1_llm_report(
     )
 
 
+# Rebuilds the investigation handoff from verified data, using the model summary only when safe.
 def _validated_investigation_report(
     *,
     parsed: dict[str, Any] | None,
@@ -183,6 +188,7 @@ def _validated_investigation_report(
     }
 
 
+# Asks the decision-maker model for a proposal while deterministic rules retain final authority.
 def _agent2_llm_proposal(state: MultiAgentState, policy: dict[str, Any]) -> dict[str, Any]:
     return call_multi_agent_llm(
         agent_name="decision_maker",
@@ -210,6 +216,7 @@ def _agent2_llm_proposal(state: MultiAgentState, policy: dict[str, Any]) -> dict
     )
 
 
+# Extracts and canonicalizes the decision proposed by the decision-maker model.
 def _proposed_decision(llm_packet: dict[str, Any]) -> str | None:
     parsed = llm_packet.get("parsed")
     if not isinstance(parsed, dict) or "proposed_decision" not in parsed:
@@ -217,6 +224,7 @@ def _proposed_decision(llm_packet: dict[str, Any]) -> str | None:
     return _canonical_decision(parsed["proposed_decision"])
 
 
+# Extracts an optional human-readable rationale from the decision-maker response.
 def _proposed_summary(llm_packet: dict[str, Any]) -> str | None:
     parsed = llm_packet.get("parsed")
     if isinstance(parsed, dict) and isinstance(parsed.get("decision_summary"), str):
@@ -224,6 +232,7 @@ def _proposed_summary(llm_packet: dict[str, Any]) -> str | None:
     return None
 
 
+# Records whether an agent used an LLM, fell back deterministically, or was skipped.
 def _execution_packet(llm_packet: dict[str, Any] | None, skipped: bool = False) -> dict[str, Any]:
     if skipped:
         return {"mode": "skipped", "provider": None, "model": None, "entrypoint": MULTI_AGENT_LLM_ENTRYPOINT}
@@ -641,6 +650,7 @@ def _customer_response_for_decision(state: MultiAgentState, decision_packet: dic
     )
 
 
+# Maps inferred sentiment to customer-facing tone and next-step guidance.
 def _sentiment_style(sentiment: str | None) -> dict[str, str]:
     if sentiment == "urgent":
         return {
@@ -661,6 +671,7 @@ def _sentiment_style(sentiment: str | None) -> dict[str, str]:
     }
 
 
+# Lets the communications model draft a response, then falls back to deterministic text when needed.
 def _customer_response_packet(
     state: MultiAgentState,
     decision_packet: dict[str, Any],
@@ -699,6 +710,7 @@ def _customer_response_packet(
     }
 
 
+# Builds the verified context that the communications model may use in its response.
 def _llm_payload(
     state: MultiAgentState,
     decision_packet: dict[str, Any],
@@ -727,6 +739,7 @@ def _llm_payload(
     }
 
 
+# Rejects customer text that contradicts the verified decision, refund, amount, or escalation state.
 def _customer_response_is_safe(
     response: str,
     action_taken: dict[str, Any],
@@ -759,6 +772,7 @@ def _customer_response_is_safe(
     return True
 
 
+# Detects wording that claims a refund was successfully approved or completed.
 def _claims_refund_success(text: str) -> bool:
     if re.search(r"\brefund\b.{0,80}\b(?:approved|issued|processed|completed)\b", text):
         return True
@@ -773,10 +787,12 @@ def _claims_refund_success(text: str) -> bool:
     return any(phrase in text for phrase in phrases)
 
 
+# Detects wording that claims a case was escalated to a human or specialist.
 def _claims_escalation(text: str) -> bool:
     return any(phrase in text for phrase in ["escalated", "human review", "specialist review", "alerted our"])
 
 
+# Extracts currency-like numbers so generated refund amounts can be checked against tool output.
 def _money_amounts(text: str) -> list[float]:
     amounts: list[float] = []
     for match in re.finditer(r"(?:usd|\$)?\s*(\d+(?:\.\d{1,2})?)\s*(?:usd)?", text):
@@ -789,6 +805,7 @@ def _money_amounts(text: str) -> list[float]:
     return amounts
 
 
+# Removes sensitive fields before verified state is passed into an LLM prompt or handoff.
 def _compact(value: Any) -> Any:
     if value is None:
         return None

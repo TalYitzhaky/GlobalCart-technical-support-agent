@@ -30,6 +30,8 @@ RETURN_REASONS = {
 }
 
 
+# Dispatches a ticket to the selected resolver mode. It may route to LangGraph,
+# multi-agent, provider tool-calling, or the local starter-kit tool flow.
 def resolve_ticket(ticket: str, mode: str = "auto") -> dict[str, Any]:
     """Resolve a GlobalCart support ticket with the requested agent mode."""
     selected_mode = _select_mode(mode)
@@ -62,6 +64,9 @@ def resolve_ticket(ticket: str, mode: str = "auto") -> dict[str, Any]:
     return resolve_ticket_local(ticket)
 
 
+# Runs the deterministic Part 1 workflow using starter-kit tools.
+# Retrieves order and user data, checks return policy, and only attempts
+# a refund when the policy marks the request as eligible.
 def resolve_ticket_local(ticket: str) -> dict[str, Any]:
     """Deterministic fallback resolver that uses the same GlobalCart tools."""
     tools_called: list[str] = []
@@ -137,6 +142,8 @@ def resolve_ticket_local(ticket: str) -> dict[str, Any]:
     )
 
 
+# Creates an OpenAI Responses client and delegates to the shared function
+# tool loop that exposes the four starter-kit tools to the model.
 def resolve_ticket_openai(ticket: str) -> dict[str, Any]:
     """Resolve a ticket through OpenAI function tool calling."""
     from openai import OpenAI
@@ -152,6 +159,8 @@ def resolve_ticket_openai(ticket: str) -> dict[str, Any]:
     )
 
 
+# Creates a Grok/xAI OpenAI-compatible client and delegates to the same
+# starter-kit function tool loop used by OpenAI mode.
 def resolve_ticket_grok(ticket: str) -> dict[str, Any]:
     """Resolve a ticket through Grok function tool calling."""
     from openai import OpenAI
@@ -167,6 +176,10 @@ def resolve_ticket_grok(ticket: str) -> dict[str, Any]:
     )
 
 
+# Runs a Gemini agent using function calling.
+# Gemini decides which registered tool to request, while Python executes
+# the tool and sends its verified result back to the model.
+# Stops when Gemini returns a final response or reaches the iteration limit.
 def resolve_ticket_gemini(ticket: str) -> dict[str, Any]:
     """Resolve a ticket through Gemini function calling."""
     from google import genai
@@ -221,6 +234,8 @@ def resolve_ticket_gemini(ticket: str) -> dict[str, Any]:
     raise RuntimeError("Gemini tool loop reached the maximum number of iterations.")
 
 
+# Shared OpenAI-compatible Responses API loop for OpenAI and Grok. It exposes
+# starter-kit tool schemas, executes model-requested calls locally, and normalizes output.
 def _resolve_ticket_responses_api(
     ticket: str,
     client: Any,
@@ -304,11 +319,14 @@ Return only parseable JSON with exactly these top-level keys:
 """
 
 
+# Extracts the first ORD-#### order id from free text. It uses no external tools.
 def extract_order_id(ticket: str) -> str | None:
     match = re.search(r"\bORD-\d{4,}\b", ticket.upper())
     return match.group(0) if match else None
 
 
+# Infers the return/support reason from ticket keywords. It uses no tools and
+# feeds check_return_policy/process_refund arguments later in the flow.
 def infer_reason(ticket: str) -> str:
     text = ticket.lower()
     if any(word in text for word in ["wrong item", "wrong product", "incorrect item"]):
@@ -324,6 +342,8 @@ def infer_reason(ticket: str) -> str:
     return "damaged_on_arrival"
 
 
+# Infers a lightweight customer sentiment label from ticket keywords. It uses
+# no tools and is used for reasoning/tone metadata.
 def infer_sentiment(ticket: str) -> str:
     text = ticket.lower()
     urgent_words = ["today", "now", "immediately", "angry", "furious", "refund me"]
@@ -335,11 +355,15 @@ def infer_sentiment(ticket: str) -> str:
     return "neutral"
 
 
+# Calls one starter-kit tool by name through mock_services.TOOL_REGISTRY and
+# records the tool name in tools_called for audit output.
 def _call_tool(name: str, tools_called: list[str], *args: Any) -> dict[str, Any]:
     tools_called.append(name)
     return gc.TOOL_REGISTRY[name](*args)
 
 
+# Executes a model-requested starter-kit function call with keyword arguments.
+# Unknown tool names are converted into structured tool errors.
 def _execute_registered_tool(name: str, arguments: dict[str, Any], tools_called: list[str]) -> dict[str, Any]:
     if name not in gc.TOOL_REGISTRY:
         return {"error": "UNKNOWN_TOOL", "message": f"Tool {name!r} is not registered."}
@@ -347,10 +371,14 @@ def _execute_registered_tool(name: str, arguments: dict[str, Any], tools_called:
     return gc.TOOL_REGISTRY[name](**arguments)
 
 
+# Detects structured business/tool errors, which starter-kit tools report with
+# an "error" key instead of raising.
 def _has_error(result: dict[str, Any]) -> bool:
     return "error" in result
 
 
+# Builds the standard NEED_MORE_INFO output when a starter-kit tool returns a
+# business error, stopping before dependent tools can run.
 def _business_error_output(
     ticket: str,
     tools_called: list[str],
@@ -378,6 +406,8 @@ def _business_error_output(
     )
 
 
+# Builds common audit reasoning from verified order, user, policy, reason, and
+# sentiment facts returned by starter-kit tools and local inference.
 def _build_common_reasoning(
     order: dict[str, Any],
     user: dict[str, Any],
@@ -404,6 +434,8 @@ def _build_common_reasoning(
     ]
 
 
+# Converts a process_refund tool result into one concise audit statement,
+# including approved amount and refund id when available.
 def _refund_reasoning(refund: dict[str, Any]) -> str:
     status = refund["status"]
     approved = float(refund.get("approved_amount", 0.0))
@@ -414,6 +446,8 @@ def _refund_reasoning(refund: dict[str, Any]) -> str:
     return f"process_refund returned {status} and approved {approved:.2f} USD."
 
 
+# Determines the canonical decision from check_return_policy and optional
+# process_refund results; it does not call tools itself.
 def _decision_from_results(policy: dict[str, Any], refund: dict[str, Any] | None) -> str:
     if not policy["eligible"]:
         return DECISION_REJECTED
@@ -426,6 +460,9 @@ def _decision_from_results(policy: dict[str, Any], refund: dict[str, Any] | None
     return DECISION_REJECTED
 
 
+# Normalizes LLM output using verified tool results as the source of truth.
+# Replaces business-critical fields with tool-owned values, handles tool
+# errors, and applies a limited check for unsupported refund claims.
 def _normalize_provider_output(
     parsed: dict[str, Any],
     provider: str,
@@ -490,6 +527,8 @@ def _normalize_provider_output(
     return parsed
 
 
+# Converts provider decision aliases into the assignment's canonical decision
+# vocabulary. It uses no tools.
 def _canonical_decision(raw: Any) -> str:
     normalized = str(raw or "").upper().strip()
     aliases = {
@@ -510,6 +549,8 @@ def _canonical_decision(raw: Any) -> str:
     return aliases.get(normalized, normalized or DECISION_NEED_MORE_INFO)
 
 
+# Copies verified order and policy context from provider tool results into the
+# final action object, including order ids from failed lookups.
 def _copy_order_context(
     action: dict[str, Any],
     order: dict[str, Any] | None,
@@ -528,6 +569,8 @@ def _copy_order_context(
         action["applicable_policies"] = policy.get("applicable_policies", [])
 
 
+# Produces safe customer text for tool-error paths, replacing provider wording
+# when a business error means facts could not be verified.
 def _safe_customer_response(response: str, decision: str | None, error: dict[str, Any] | None) -> str:
     if error:
         return (
@@ -537,12 +580,17 @@ def _safe_customer_response(response: str, decision: str | None, error: dict[str
     return response
 
 
+# Detects a predefined set of refund-approval claims in customer text.
+# Returns True when such a claim appears without a verified APPROVED refund.
+# This is a keyword-based safeguard, not comprehensive semantic validation.
 def _response_contradicts_refund(response: str, action: dict[str, Any]) -> bool:
     text = response.lower()
     claims_refund = any(phrase in text for phrase in ["refund has been issued", "refund was issued", "approved a refund", "refund is approved"])
     return claims_refund and action.get("refund_status") != "APPROVED"
 
 
+# Builds deterministic customer-facing text from verified order/user/policy and
+# optional process_refund output. It does not call tools.
 def _customer_response(
     ticket: str,
     order: dict[str, Any],
@@ -572,6 +620,8 @@ def _customer_response(
     )
 
 
+# Wraps reasoning_chain, action_taken, and customer_response into the required
+# top-level assignment JSON contract.
 def _base_output(
     reasoning_chain: list[str],
     action_taken: dict[str, Any],
@@ -584,6 +634,8 @@ def _base_output(
     }
 
 
+# Converts a starter-kit tool schema into the OpenAI Responses function-tool
+# shape used by OpenAI and Grok provider modes.
 def _schema_to_openai_tool(schema: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "function",
@@ -593,6 +645,8 @@ def _schema_to_openai_tool(schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Converts a starter-kit tool schema into the Gemini function-tool shape used
+# by Gemini provider mode.
 def _schema_to_gemini_tool(schema: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "function",
@@ -602,6 +656,8 @@ def _schema_to_gemini_tool(schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Normalizes CLI/API mode names and maps auto to the official multi-agent path.
+# It does not call tools.
 def _select_mode(mode: str) -> str:
     normalized = mode.lower()
     if normalized == "auto":
@@ -611,6 +667,8 @@ def _select_mode(mode: str) -> str:
     raise ValueError("mode must be one of: auto, local, langgraph-local, multi-agent, openai, grok, gemini")
 
 
+# Parses provider JSON output and strips optional markdown code fences before
+# json.loads. It does not call tools.
 def _parse_json_output(text: str) -> dict[str, Any]:
     stripped = text.strip()
     if stripped.startswith("```"):
@@ -619,6 +677,8 @@ def _parse_json_output(text: str) -> dict[str, Any]:
     return json.loads(stripped)
 
 
+# Validates that a provider returned the required three-field assignment
+# contract before normalization continues.
 def _validate_agent_output(value: dict[str, Any]) -> None:
     required = {"reasoning_chain", "action_taken", "customer_response"}
     missing = required - set(value)
@@ -632,6 +692,8 @@ def _validate_agent_output(value: dict[str, Any]) -> None:
         raise ValueError("customer_response must be a string")
 
 
+# Extracts raw output items from OpenAI-compatible response objects/dicts so
+# tool calls and messages can be inspected.
 def _response_output(response: Any) -> list[Any]:
     output = getattr(response, "output", None)
     if output is not None:
@@ -641,6 +703,8 @@ def _response_output(response: Any) -> list[Any]:
     return []
 
 
+# Extracts text from OpenAI-compatible response objects/dicts, including
+# message content blocks, without executing tools.
 def _response_text(response: Any) -> str:
     text = getattr(response, "output_text", None)
     if text:
@@ -656,6 +720,8 @@ def _response_text(response: Any) -> str:
     return "".join(chunks)
 
 
+# Extracts final text from Gemini interaction objects/dicts by walking message
+# and text steps, without executing tools.
 def _interaction_text(interaction: Any) -> str:
     text = getattr(interaction, "output_text", None)
     if text:
@@ -676,6 +742,8 @@ def _interaction_text(interaction: Any) -> str:
     return "".join(chunks)
 
 
+# Converts SDK model objects or dictionaries into dictionaries so provider
+# conversation history can be replayed or extended.
 def _items_as_dicts(items: list[Any]) -> list[dict[str, Any]]:
     converted: list[dict[str, Any]] = []
     for item in items:
@@ -686,10 +754,12 @@ def _items_as_dicts(items: list[Any]) -> list[dict[str, Any]]:
     return converted
 
 
+# Reads the SDK-independent "type" field from response/tool-call items.
 def _item_type(item: Any) -> str | None:
     return _item_get(item, "type")
 
 
+# Safely reads a field from either a dictionary or SDK object.
 def _item_get(item: Any, key: str) -> Any:
     if isinstance(item, dict):
         return item.get(key)

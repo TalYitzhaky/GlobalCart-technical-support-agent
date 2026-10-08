@@ -16,6 +16,7 @@ PROVIDER_DETERMINISTIC = "deterministic"
 MULTI_AGENT_LLM_ENTRYPOINT = "multi_agent_provider.call_multi_agent_llm"
 
 
+# Selects the configured provider, executes one specialized-agent request, and returns a normalized packet.
 def call_multi_agent_llm(
     *,
     agent_name: str,
@@ -60,6 +61,7 @@ def call_multi_agent_llm(
         }
 
 
+# Selects the first configured provider with an available API key, or local fallback mode.
 def select_multi_agent_provider() -> str | None:
     configured = os.environ.get("MULTI_AGENT_LLM_PROVIDER", "").strip().lower()
     if configured in {"", "auto"}:
@@ -81,6 +83,7 @@ def select_multi_agent_provider() -> str | None:
     return None
 
 
+# Builds the normalized response used when no external LLM provider is available.
 def _fallback_packet() -> dict[str, Any]:
     return {
         "mode": "deterministic_fallback",
@@ -92,6 +95,7 @@ def _fallback_packet() -> dict[str, Any]:
     }
 
 
+# Resolves the model name from the shared override or the provider-specific environment setting.
 def _model_for_provider(provider: str) -> str:
     if os.environ.get("MULTI_AGENT_MODEL"):
         return os.environ["MULTI_AGENT_MODEL"]
@@ -102,6 +106,7 @@ def _model_for_provider(provider: str) -> str:
     return os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
+# Reads and validates the provider timeout, falling back to twenty seconds for invalid values.
 def _timeout_seconds() -> float:
     raw = os.environ.get("MULTI_AGENT_TIMEOUT_SECONDS", "20").strip()
     try:
@@ -111,6 +116,7 @@ def _timeout_seconds() -> float:
     return timeout if timeout > 0 else 20.0
 
 
+# Runs a provider request in a child process so hung SDK calls can be terminated safely.
 def _call_provider_with_timeout(
     provider: str,
     system_prompt: str,
@@ -143,6 +149,7 @@ def _call_provider_with_timeout(
     raise RuntimeError(message["error"])
 
 
+# Executes the provider call in the child process and sends success or failure back to the parent.
 def _provider_worker(
     result_queue: mp.Queue,
     provider: str,
@@ -158,6 +165,7 @@ def _provider_worker(
         result_queue.put({"ok": False, "error": str(exc)})
 
 
+    # Dispatches the normalized prompt to OpenAI, Grok, or Gemini and extracts response text.
 def _call_provider(
     provider: str,
     system_prompt: str,
@@ -202,6 +210,7 @@ def _call_provider(
     return _interaction_text(interaction)
 
 
+# Formats structured agent context and the expected response shape into the provider user prompt.
 def _user_prompt(payload: dict[str, Any], output_schema: dict[str, Any], text_only: bool) -> str:
     if text_only:
         return (
