@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: globalcart-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: globalcart-agent
+  template:
+    metadata:
+      labels:
+        app: globalcart-agent
+    spec:
+      containers:
+        - name: globalcart-agent
+          image: globalcart-agent:v2
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
