@@ -1,6 +1,5 @@
-"""HTTP contract checks backed by the real deterministic workflows."""
+"""HTTP contract checks; business behavior belongs in the scenario suites."""
 
-import os
 import unittest
 from unittest.mock import patch
 
@@ -11,42 +10,108 @@ from app import app
 
 class ResolveTicketApiTests(unittest.TestCase):
     def setUp(self):
+        # Patch where the endpoint looks up the resolver, before sending requests.
+        resolver_patch = patch("app.resolve_ticket", autospec=True)
+        self.resolver = resolver_patch.start()
+        self.addCleanup(resolver_patch.stop)
+        self.result = {
+            "reasoning_chain": ["Verified ticket information."],
+            "action_taken": {
+                "decision": "NEED_MORE_INFO",
+                "metadata": {"count": 1, "amount": 12.5, "ready": False, "provider": None},
+                "tools_called": [],
+            },
+            "customer_response": "שלום — please confirm your order number.",
+        }
+        self.resolver.return_value = self.result
         self.client = TestClient(app)
+        self.addCleanup(self.client.close)
 
-    def test_local_refund(self):
-        response = self.client.post("/resolve-ticket", json={
-            "ticket": "Order ORD-1001 arrived cracked.", "mode": "local",
-        })
+    def test_default_mode_and_json_response(self):
+        # Response-model filtering must keep internal top-level fields off the wire.
+        self.resolver.return_value = {**self.result, "internal_debug": "not public"}
+        response = self.client.post("/resolve-ticket", json={"ticket": "Please help."})
+
         self.assertEqual(response.status_code, 200)
-        result = response.json()
-        self.assertEqual(set(result), {"reasoning_chain", "action_taken", "customer_response"})
-        self.assertEqual(result["action_taken"]["refund_status"], "APPROVED")
+        self.assertEqual(response.headers["content-type"], "application/json")
+        self.assertEqual(response.json(), self.result)
+        self.resolver.assert_called_once_with("Please help.", mode="multi-agent")
 
-    @patch.dict(os.environ, {"MULTI_AGENT_LLM_PROVIDER": "deterministic"})
-    def test_default_workflow_escalates_fraud(self):
-        response = self.client.post("/resolve-ticket", json={
-            "ticket": "Order ORD-1005 arrived smashed. Refund me.",
-        })
+    def test_supported_modes_and_trimmed_ticket_are_forwarded(self):
+        for mode in ("auto", "local", "langgraph-local", "multi-agent", "openai", "grok", "gemini"):
+            with self.subTest(mode=mode):
+                self.resolver.reset_mock()
+                response = self.client.post("/resolve-ticket", json={
+                    "ticket": " \n Please help.\nKeep this line. \t ", "mode": mode,
+                })
+                self.assertEqual(response.status_code, 200)
+                self.resolver.assert_called_once_with("Please help.\nKeep this line.", mode=mode)
+
+    def test_business_error_result_remains_http_200(self):
+        # The resolver owns the decision; the API only carries its result.
+        self.result["action_taken"]["error"] = "ORDER_NOT_FOUND"
+        response = self.client.post("/resolve-ticket", json={"ticket": "Please help."})
+
         self.assertEqual(response.status_code, 200)
-        action = response.json()["action_taken"]
-        self.assertEqual(action["mode"], "multi-agent")
-        self.assertEqual(action["decision"], "ESCALATED_TO_HUMAN")
-        self.assertIn("send_slack_alert", action["tools_called"])
-        self.assertNotIn("process_refund", action["tools_called"])
+        self.assertEqual(response.json(), self.result)
+        self.resolver.assert_called_once_with("Please help.", mode="multi-agent")
 
-    def test_missing_order_is_business_result(self):
-        response = self.client.post("/resolve-ticket", json={
-            "ticket": "Order ORD-2222 never arrived.", "mode": "local",
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["action_taken"]["decision"], "NEED_MORE_INFO")
+    def test_invalid_fields_are_rejected_before_resolution(self):
+        cases = [("missing ticket", {}, "ticket")]
+        cases.extend(
+            (f"invalid ticket {value!r}", {"ticket": value}, "ticket")
+            for value in ("", " \n\t ", None, 123, True, [], {})
+        )
+        cases.extend(
+            (f"invalid mode {value!r}", {"ticket": "Help", "mode": value}, "mode")
+            for value in ("unknown", "", None, 123, True, [], {})
+        )
+        for label, payload, field in cases:
+            with self.subTest(case=label):
+                response = self.client.post("/resolve-ticket", json=payload)
+                self.assertEqual(response.status_code, 422)
+                locations = [error["loc"] for error in response.json()["detail"]]
+                self.assertIn(["body", field], locations)
+                self.resolver.assert_not_called()
 
-    def test_invalid_requests(self):
-        for payload in ({}, {"ticket": ""}, {"ticket": " \n\t "},
-                        {"ticket": None}, {"ticket": 123},
-                        {"ticket": "Help", "mode": "unknown"}):
-            with self.subTest(payload=payload):
-                self.assertEqual(self.client.post("/resolve-ticket", json=payload).status_code, 422)
+    def test_invalid_request_bodies_are_rejected_before_resolution(self):
+        # Raw content covers absent, malformed, and non-object JSON bodies.
+        for body in (b"", b'{"ticket":', b"null", b"[]", b'"Help"', b"123"):
+            with self.subTest(body=body):
+                response = self.client.post(
+                    "/resolve-ticket", content=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                self.assertEqual(response.status_code, 422)
+                self.assertTrue(response.json()["detail"])
+                self.resolver.assert_not_called()
+
+    def test_invalid_workflow_results_are_server_errors(self):
+        invalid_results = [
+            {key: value for key, value in self.result.items() if key != "customer_response"},
+            {**self.result, "reasoning_chain": "not a list"},
+            {**self.result, "action_taken": "not an object"},
+            {**self.result, "customer_response": None},
+        ]
+        with TestClient(app, raise_server_exceptions=False) as client:
+            for result in invalid_results:
+                with self.subTest(result=result):
+                    self.resolver.reset_mock()
+                    self.resolver.return_value = result
+                    response = client.post("/resolve-ticket", json={"ticket": "Help"})
+                    self.assertEqual(response.status_code, 500)
+                    self.resolver.assert_called_once_with("Help", mode="multi-agent")
+
+    def test_unexpected_workflow_exception_returns_generic_server_error(self):
+        self.resolver.side_effect = RuntimeError("Private workflow failure details")
+
+        # Observe the HTTP response instead of TestClient re-raising the exception.
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/resolve-ticket", json={"ticket": "Help"})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.text, "Internal Server Error")
+        self.resolver.assert_called_once_with("Help", mode="multi-agent")
 
 
 if __name__ == "__main__":
