@@ -154,6 +154,41 @@ Gemini mode uses Google Gemini custom function calling through the Interactions
 API:
 https://ai.google.dev/gemini-api/docs/function-calling
 
+## HTTP API and Docker
+
+From the solution folder, start the API with:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+`POST /resolve-ticket` calls the same workflow as the CLI and returns the same
+three-field JSON result. The optional `mode` accepts the CLI modes and defaults
+to `multi-agent`. Missing, empty, or whitespace-only tickets and unsupported
+modes return HTTP 422. Business outcomes (including missing orders and rejected
+refunds) return HTTP 200 with the workflow's decision.
+
+```bash
+curl http://localhost:8000/resolve-ticket -H "Content-Type: application/json" -d '{"ticket":"Order ORD-1001 arrived cracked.","mode":"local"}'
+```
+
+Interactive API documentation is available at `http://localhost:8000/docs`.
+
+Build from the **Quest 4** folder so Docker can include the solution and the
+Stage 1 mock services and fixtures:
+
+```bash
+docker build -f solution/Dockerfile -t globalcart-agent:v2 .
+docker run --rm -p 8000:8000 globalcart-agent:v2
+```
+
+The mock services run as Python functions inside the application; no separate
+service processes are required. Solution fraud rules and escalation-channel
+fixtures are also bundled. Without provider credentials, the default workflow
+uses its deterministic fallback. Pass provider settings at runtime (for example,
+`docker run --rm -p 8000:8000 -e OPENAI_API_KEY globalcart-agent:v2` to forward an
+exported key). Credentials are not copied into the image.
+
 ## Run
 
 Local deterministic mode:
@@ -303,6 +338,12 @@ Known regression cases:
 - `ORD-2222`: reports missing order instead of inventing data.
 
 ## Verify
+
+Verify the HTTP contract and deterministic workflow integration from this folder:
+
+```bash
+python -m unittest test_api -v
+```
 
 First verify the starter kit:
 
