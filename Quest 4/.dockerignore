@@ -1,0 +1,13 @@
+# Keep local credentials and generated files out of the build context.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/.aws
+**/.ssh
+**/.git
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/outbox

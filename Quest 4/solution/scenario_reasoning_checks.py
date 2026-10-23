@@ -73,3 +73,15 @@ def _failure(scenario: dict[str, Any], label: str, chain: Any, action: dict[str,
         f"reasoning_chain={json.dumps(chain, ensure_ascii=False)}; "
         f"action_taken={json.dumps(action, ensure_ascii=False)}"
     )
+
+
+# Runs the existing scenario suite, including reasoning checks, and reports success only if it passes.
+def main() -> int:
+    from run_scenarios import main as run_scenarios
+
+    exit_code = run_scenarios()
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

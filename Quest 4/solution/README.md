@@ -154,6 +154,62 @@ Gemini mode uses Google Gemini custom function calling through the Interactions
 API:
 https://ai.google.dev/gemini-api/docs/function-calling
 
+## HTTP API and Docker
+
+From the solution folder, start the API with:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+`POST /resolve-ticket` calls the same workflow as the CLI and returns the same
+three-field JSON result. The optional `mode` accepts the CLI modes and defaults
+to `multi-agent`. Missing, empty, or whitespace-only tickets and unsupported
+modes return HTTP 422. Business outcomes (including missing orders and rejected
+refunds) return HTTP 200 with the workflow's decision.
+
+```bash
+curl http://localhost:8000/resolve-ticket -H "Content-Type: application/json" -d '{"ticket":"Order ORD-1001 arrived cracked.","mode":"local"}'
+```
+
+Interactive API documentation is available at `http://localhost:8000/docs`.
+
+Kubernetes uses two lightweight health endpoints on port 8000:
+
+- `GET /health/live` returns HTTP 200 with `{"status":"alive"}` when the
+  application can serve HTTP requests.
+- `GET /health/ready` returns HTTP 200 with `{"status":"ready"}` once application
+  startup has completed and HTTP requests can be served.
+
+Neither endpoint runs the resolver, calls an LLM provider, or executes refund
+tools. Provider credentials and external connectivity are optional because the
+workflow supports deterministic fallback.
+
+The probes in `deployment.yaml` use these timings:
+
+| Probe | Initial delay | Period | Timeout | Failure threshold |
+|---|---|---|---|---|
+| Readiness | 2 seconds | 5 seconds | 2 seconds | 3 |
+| Liveness | 10 seconds | 10 seconds | 2 seconds | 3 |
+
+Readiness failures remove the pod from Service traffic; repeated liveness
+failures cause Kubernetes to restart the container.
+
+Build from the **Quest 4** folder so Docker can include the solution and the
+Stage 1 mock services and fixtures:
+
+```bash
+docker build -f solution/Dockerfile -t globalcart-agent:v2 .
+docker run --rm -p 8000:8000 globalcart-agent:v2
+```
+
+The mock services run as Python functions inside the application; no separate
+service processes are required. Solution fraud rules and escalation-channel
+fixtures are also bundled. Without provider credentials, the default workflow
+uses its deterministic fallback. Pass provider settings at runtime (for example,
+`docker run --rm -p 8000:8000 -e OPENAI_API_KEY globalcart-agent:v2` to forward an
+exported key). Credentials are not copied into the image.
+
 ## Run
 
 Local deterministic mode:
@@ -302,7 +358,55 @@ Known regression cases:
 - `ORD-1007`: rejected because order has not shipped.
 - `ORD-2222`: reports missing order instead of inventing data.
 
+## Kubernetes Deployment (Local)
+
+Prerequisites: Docker, `kubectl`, and a running local Kubernetes cluster.
+Run these commands from `Quest 4/solution`. Confirm the intended cluster with
+`kubectl config current-context` before applying the manifests.
+
+Build the image using `Quest 4/` as the build context:
+
+```bash
+docker build -f Dockerfile -t globalcart-agent:v2 ..
+```
+
+The deployment uses `imagePullPolicy: Never`, so the exact image must be
+available on the cluster nodes. For Minikube, run
+`minikube image load globalcart-agent:v2`; for kind, run
+`kind load docker-image globalcart-agent:v2 --name <cluster-name>`.
+
+Deploy and wait for readiness, then forward the service to your machine:
+
+```bash
+kubectl apply -f deployment.yaml -f service.yaml
+kubectl rollout status deployment/globalcart-agent --timeout=120s
+kubectl port-forward service/globalcart-service 8000:8000
+```
+
+Keep port-forward running and open <http://localhost:8000/docs> to try
+`POST /resolve-ticket`. Check <http://localhost:8000/health/ready> for readiness.
+The supplied manifests configure no API keys, so agents use deterministic
+fallback. Keep credentials out of images and manifests; use Kubernetes Secrets
+if you later enable a provider.
+
+To troubleshoot, run `kubectl get pods -l app=globalcart-agent` and
+`kubectl logs deployment/globalcart-agent`. `ErrImageNeverPull` means the image
+has not been loaded onto the node. Remove the deployment and service with:
+
+```bash
+kubectl delete -f deployment.yaml -f service.yaml
+```
+
+See the official [kubectl reference](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands)
+for rollout and port-forward options.
+
 ## Verify
+
+Verify the HTTP contract and deterministic workflow integration from this folder:
+
+```bash
+python -m unittest test_api -v
+```
 
 First verify the starter kit:
 
