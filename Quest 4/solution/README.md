@@ -358,6 +358,48 @@ Known regression cases:
 - `ORD-1007`: rejected because order has not shipped.
 - `ORD-2222`: reports missing order instead of inventing data.
 
+## Kubernetes Deployment (Local)
+
+Prerequisites: Docker, `kubectl`, and a running local Kubernetes cluster.
+Run these commands from `Quest 4/solution`. Confirm the intended cluster with
+`kubectl config current-context` before applying the manifests.
+
+Build the image using `Quest 4/` as the build context:
+
+```bash
+docker build -f Dockerfile -t globalcart-agent:v2 ..
+```
+
+The deployment uses `imagePullPolicy: Never`, so the exact image must be
+available on the cluster nodes. For Minikube, run
+`minikube image load globalcart-agent:v2`; for kind, run
+`kind load docker-image globalcart-agent:v2 --name <cluster-name>`.
+
+Deploy and wait for readiness, then forward the service to your machine:
+
+```bash
+kubectl apply -f deployment.yaml -f service.yaml
+kubectl rollout status deployment/globalcart-agent --timeout=120s
+kubectl port-forward service/globalcart-service 8000:8000
+```
+
+Keep port-forward running and open <http://localhost:8000/docs> to try
+`POST /resolve-ticket`. Check <http://localhost:8000/health/ready> for readiness.
+The supplied manifests configure no API keys, so agents use deterministic
+fallback. Keep credentials out of images and manifests; use Kubernetes Secrets
+if you later enable a provider.
+
+To troubleshoot, run `kubectl get pods -l app=globalcart-agent` and
+`kubectl logs deployment/globalcart-agent`. `ErrImageNeverPull` means the image
+has not been loaded onto the node. Remove the deployment and service with:
+
+```bash
+kubectl delete -f deployment.yaml -f service.yaml
+```
+
+See the official [kubectl reference](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands)
+for rollout and port-forward options.
+
 ## Verify
 
 Verify the HTTP contract and deterministic workflow integration from this folder:
