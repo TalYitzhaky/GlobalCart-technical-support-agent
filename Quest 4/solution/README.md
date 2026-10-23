@@ -174,6 +174,27 @@ curl http://localhost:8000/resolve-ticket -H "Content-Type: application/json" -d
 
 Interactive API documentation is available at `http://localhost:8000/docs`.
 
+Kubernetes uses two lightweight health endpoints on port 8000:
+
+- `GET /health/live` returns HTTP 200 with `{"status":"alive"}` when the
+  application can serve HTTP requests.
+- `GET /health/ready` returns HTTP 200 with `{"status":"ready"}` once application
+  startup has completed and HTTP requests can be served.
+
+Neither endpoint runs the resolver, calls an LLM provider, or executes refund
+tools. Provider credentials and external connectivity are optional because the
+workflow supports deterministic fallback.
+
+The probes in `deployment.yaml` use these timings:
+
+| Probe | Initial delay | Period | Timeout | Failure threshold |
+|---|---|---|---|---|
+| Readiness | 2 seconds | 5 seconds | 2 seconds | 3 |
+| Liveness | 10 seconds | 10 seconds | 2 seconds | 3 |
+
+Readiness failures remove the pod from Service traffic; repeated liveness
+failures cause Kubernetes to restart the container.
+
 Build from the **Quest 4** folder so Docker can include the solution and the
 Stage 1 mock services and fixtures:
 

@@ -27,6 +27,14 @@ class ResolveTicketApiTests(unittest.TestCase):
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
+    def test_health_endpoints_do_not_call_resolver(self):
+        for path, status in (("/health/live", "alive"), ("/health/ready", "ready")):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"status": status})
+                self.resolver.assert_not_called()
+
     def test_default_mode_and_json_response(self):
         # Response-model filtering must keep internal top-level fields off the wire.
         self.resolver.return_value = {**self.result, "internal_debug": "not public"}

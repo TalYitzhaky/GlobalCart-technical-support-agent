@@ -11,6 +11,16 @@ from globalcart_agent import resolve_ticket
 app = FastAPI(title="GlobalCart Resolver API", version="1.0.0")
 
 
+@app.get("/health/live")
+async def liveness() -> dict[str, str]:
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+async def readiness() -> dict[str, str]:
+    return {"status": "ready"}
+
+
 class ResolveTicketRequest(BaseModel):
     ticket: str = Field(min_length=1, description="Customer support ticket text.")
     mode: Literal[
