@@ -1,0 +1,76 @@
+name: GlobalCart CI
+
+on:
+  push:
+    branches: [main, feature/kubernetes-integration]
+  pull_request:
+    branches: [main, feature/kubernetes-integration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: globalcart-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: Quest 4/solution
+    env:
+      MULTI_AGENT_LLM_PROVIDER: deterministic
+      OPENAI_API_KEY: ""
+      XAI_API_KEY: ""
+      GEMINI_API_KEY: ""
+      SLACK_WEBHOOK_URL: ""
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Quest 4/solution/requirements.txt
+
+      - name: Install application dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run API contract tests
+        run: python -m unittest -v test_api
+
+      - name: Verify Stage 1 starter tools
+        working-directory: Quest 4/Stage 1/starter-kit
+        run: python examples/verify_scenarios.py
+
+      - name: Verify Stage 2 starter tools
+        working-directory: Quest 4/Stage 2/starter-kit
+        run: python examples/verify_scenarios.py
+
+      - name: Run local regression scenarios
+        run: python run_scenarios.py --mode local
+
+      - name: Run LangGraph regression scenarios
+        run: python run_scenarios.py --mode langgraph-local
+
+      - name: Run multi-agent regression scenarios
+        run: python run_scenarios.py --mode multi-agent
+
+      - name: Run Part 2 scenarios
+        run: python run_part2_scenarios.py --deterministic
+
+      - name: Check Python compilation
+        run: python -m compileall -q .
+
+      - name: Build Docker image
+        working-directory: Quest 4
+        run: docker build --file solution/Dockerfile --tag globalcart:ci .
